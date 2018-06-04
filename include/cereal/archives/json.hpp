@@ -107,6 +107,9 @@ namespace cereal
   {
     enum class NodeType { StartObject, InObject, StartArray, InArray };
 
+    using WriteStringStream = CEREAL_RAPIDJSON_NAMESPACE::StringBuffer;
+    using JSONWriterString = CEREAL_RAPIDJSON_NAMESPACE::PrettyWriter<WriteStringStream>;
+
     using WriteStream = CEREAL_RAPIDJSON_NAMESPACE::OStreamWrapper;
     using JSONWriter = CEREAL_RAPIDJSON_NAMESPACE::PrettyWriter<WriteStream>;
 
@@ -153,29 +156,84 @@ namespace cereal
           unsigned int itsIndentLength;
       };
 
+
+      std::ostringstream dummyStream;
+      std::string *outputString;
+
       //! Construct, outputting to the provided stream
       /*! @param stream The stream to output to.
           @param options The JSON specific options to use.  See the Options struct
                          for the values of default parameters */
       JSONOutputArchive(std::ostream & stream, Options const & options = Options::Default() ) :
         OutputArchive<JSONOutputArchive>(this),
+        outputString(nullptr),
+        itsWriteStringStream(),
+        itsWriterString(itsWriteStringStream),
         itsWriteStream(stream),
         itsWriter(itsWriteStream),
         itsNextName(nullptr)
       {
+        itsWriterString.SetMaxDecimalPlaces( options.itsPrecision );
+        itsWriterString.SetIndent( options.itsIndentChar, options.itsIndentLength );
+
         itsWriter.SetMaxDecimalPlaces( options.itsPrecision );
         itsWriter.SetIndent( options.itsIndentChar, options.itsIndentLength );
+
+
         itsNameCounter.push(0);
         itsNodeStack.push(NodeType::StartObject);
       }
 
+      //! Construct, outputting to the provided stream
+      /*! @param stream The stream to output to.
+          @param options The JSON specific options to use.  See the Options struct
+                         for the values of default parameters */
+      JSONOutputArchive(std::string & string, Options const & options = Options::Default() ) :
+        OutputArchive<JSONOutputArchive>(this),
+        outputString(&string),
+        itsWriteStringStream(),
+        itsWriterString(itsWriteStringStream),
+        itsWriteStream(dummyStream),
+        itsWriter(itsWriteStream),
+        itsNextName(nullptr)
+      {
+        itsWriterString.SetMaxDecimalPlaces( options.itsPrecision );
+        itsWriterString.SetIndent( options.itsIndentChar, options.itsIndentLength );
+
+        itsWriter.SetMaxDecimalPlaces( options.itsPrecision );
+        itsWriter.SetIndent( options.itsIndentChar, options.itsIndentLength );
+
+        itsNameCounter.push(0);
+        itsNodeStack.push(NodeType::StartObject);
+      }
+
+
+
       //! Destructor, flushes the JSON
       ~JSONOutputArchive() CEREAL_NOEXCEPT
       {
-        if (itsNodeStack.top() == NodeType::InObject)
-          itsWriter.EndObject();
-        else if (itsNodeStack.top() == NodeType::InArray)
-          itsWriter.EndArray();
+        if (outputString)
+        {
+            if (itsNodeStack.top() == NodeType::InObject)
+            {
+              itsWriterString.EndObject();
+            }
+            else if (itsNodeStack.top() == NodeType::InArray)
+            {
+              itsWriterString.EndArray();
+            }
+            *outputString=itsWriteStringStream.GetString();
+        }else{
+            if (itsNodeStack.top() == NodeType::InObject)
+            {
+              itsWriter.EndObject();
+            }
+            else if (itsNodeStack.top() == NodeType::InArray)
+            {
+              itsWriter.EndArray();
+            }
+        }
+
       }
 
       //! Saves some binary data, encoded as a base64 string, with an optional name
@@ -216,18 +274,36 @@ namespace cereal
         // the object/array.
         //
         // We'll also end any object/arrays we happen to be in
-        switch(itsNodeStack.top())
+
+        if (outputString)
         {
-          case NodeType::StartArray:
-            itsWriter.StartArray();
-          case NodeType::InArray:
-            itsWriter.EndArray();
-            break;
-          case NodeType::StartObject:
-            itsWriter.StartObject();
-          case NodeType::InObject:
-            itsWriter.EndObject();
-            break;
+            switch(itsNodeStack.top())
+            {
+              case NodeType::StartArray:
+                itsWriterString.StartArray();
+              case NodeType::InArray:
+                itsWriterString.EndArray();
+                break;
+              case NodeType::StartObject:
+                itsWriterString.StartObject();
+              case NodeType::InObject:
+                itsWriterString.EndObject();
+                break;
+            }
+        }else{
+            switch(itsNodeStack.top())
+            {
+              case NodeType::StartArray:
+                itsWriter.StartArray();
+              case NodeType::InArray:
+                itsWriter.EndArray();
+                break;
+              case NodeType::StartObject:
+                itsWriter.StartObject();
+              case NodeType::InObject:
+                itsWriter.EndObject();
+                break;
+            }
         }
 
         itsNodeStack.pop();
@@ -241,23 +317,23 @@ namespace cereal
       }
 
       //! Saves a bool to the current node
-      void saveValue(bool b)                { itsWriter.Bool(b);                                                         }
+      void saveValue(bool b)                { if (outputString){itsWriterString.Bool(b);}else{itsWriter.Bool(b);}               }
       //! Saves an int to the current node
-      void saveValue(int i)                 { itsWriter.Int(i);                                                          }
+      void saveValue(int i)                 { if (outputString){itsWriterString.Int(i);}else{itsWriter.Int(i);}                                                          }
       //! Saves a uint to the current node
-      void saveValue(unsigned u)            { itsWriter.Uint(u);                                                         }
+      void saveValue(unsigned u)            { if (outputString){itsWriterString.Uint(u);}else{itsWriter.Uint(u);};                                                         }
       //! Saves an int64 to the current node
-      void saveValue(int64_t i64)           { itsWriter.Int64(i64);                                                      }
+      void saveValue(int64_t i64)           { if (outputString){itsWriterString.Int64(i64);}else{itsWriter.Int64(i64);};                                                      }
       //! Saves a uint64 to the current node
-      void saveValue(uint64_t u64)          { itsWriter.Uint64(u64);                                                     }
+      void saveValue(uint64_t u64)          { if (outputString){itsWriterString.Uint64(u64);}else{itsWriter.Uint64(u64);};                                                     }
       //! Saves a double to the current node
-      void saveValue(double d)              { itsWriter.Double(d);                                                       }
+      void saveValue(double d)              { if (outputString){itsWriterString.Double(d);}else{itsWriter.Double(d);};                                                       }
       //! Saves a string to the current node
-      void saveValue(std::string const & s) { itsWriter.String(s.c_str(), static_cast<CEREAL_RAPIDJSON_NAMESPACE::SizeType>( s.size() )); }
+      void saveValue(std::string const & s) { if (outputString){itsWriterString.String(s.c_str(), static_cast<CEREAL_RAPIDJSON_NAMESPACE::SizeType>( s.size() ));}else{itsWriter.String(s.c_str(), static_cast<CEREAL_RAPIDJSON_NAMESPACE::SizeType>( s.size() ));} }
       //! Saves a const char * to the current node
-      void saveValue(char const * s)        { itsWriter.String(s);                                                       }
+      void saveValue(char const * s)        { if (outputString){itsWriterString.String(s);}else{itsWriter.String(s);};                                                       }
       //! Saves a nullptr to the current node
-      void saveValue(std::nullptr_t)        { itsWriter.Null();                                                          }
+      void saveValue(std::nullptr_t)        { if (outputString){itsWriterString.Null();}else{itsWriter.Null();};                                                          }
 
     private:
       // Some compilers/OS have difficulty disambiguating the above for various flavors of longs, so we provide
@@ -336,13 +412,26 @@ namespace cereal
         // Start up either an object or an array, depending on state
         if(nodeType == NodeType::StartArray)
         {
-          itsWriter.StartArray();
+          if(outputString)
+          {
+              itsWriterString.StartArray();
+
+          }else{
+              itsWriter.StartArray();
+          }
           itsNodeStack.top() = NodeType::InArray;
         }
         else if(nodeType == NodeType::StartObject)
         {
           itsNodeStack.top() = NodeType::InObject;
-          itsWriter.StartObject();
+
+          if(outputString)
+          {
+              itsWriterString.StartObject();
+
+          }else{
+              itsWriter.StartObject();
+          }
         }
 
         // Array types do not output names
@@ -369,6 +458,9 @@ namespace cereal
       //! @}
 
     private:
+      WriteStringStream itsWriteStringStream;
+      JSONWriterString itsWriterString;
+
       WriteStream itsWriteStream;          //!< Rapidjson write stream
       JSONWriter itsWriter;                //!< Rapidjson writer
       char const * itsNextName;            //!< The next name
@@ -418,6 +510,8 @@ namespace cereal
   {
     private:
       using ReadStream = CEREAL_RAPIDJSON_NAMESPACE::IStreamWrapper;
+      using ReadStringStream = CEREAL_RAPIDJSON_NAMESPACE::StringStream;
+
       typedef CEREAL_RAPIDJSON_NAMESPACE::GenericValue<CEREAL_RAPIDJSON_NAMESPACE::UTF8<>> JSONValue;
       typedef JSONValue::ConstMemberIterator MemberIterator;
       typedef JSONValue::ConstValueIterator ValueIterator;
@@ -430,17 +524,42 @@ namespace cereal
 
       //! Construct, reading from the provided stream
       /*! @param stream The stream to read from */
-      JSONInputArchive(std::istream & stream) :
+      JSONInputArchive(std::istream & stream,bool cache=false) :
         InputArchive<JSONInputArchive>(this),
-        itsNextName( nullptr ),
-        itsReadStream(stream)
+        itsNextName( nullptr )
       {
-        itsDocument.ParseStream<>(itsReadStream);
+
+            if(cache)
+            {
+                std::string  cacheString(std::istreambuf_iterator<char>(stream), {});
+                ReadStringStream sstream(cacheString.c_str());
+
+                itsDocument.ParseStream<>(sstream);
+            }else{
+                ReadStream readStream(stream);
+
+                itsDocument.ParseStream<>(readStream);
+            }
+
+
         if (itsDocument.IsArray())
           itsIteratorStack.emplace_back(itsDocument.Begin(), itsDocument.End());
         else
           itsIteratorStack.emplace_back(itsDocument.MemberBegin(), itsDocument.MemberEnd());
       }
+      JSONInputArchive(std::string & string) :
+        InputArchive<JSONInputArchive>(this),
+        itsNextName( nullptr )
+      {
+        ReadStringStream readStringStream(string.c_str());
+
+        itsDocument.ParseStream<>(readStringStream);
+        if (itsDocument.IsArray())
+          itsIteratorStack.emplace_back(itsDocument.Begin(), itsDocument.End());
+        else
+          itsIteratorStack.emplace_back(itsDocument.MemberBegin(), itsDocument.MemberEnd());
+      }
+
 
       ~JSONInputArchive() CEREAL_NOEXCEPT = default;
 
@@ -727,8 +846,11 @@ namespace cereal
       //! @}
 
     private:
+      std::stringstream dummyStringStream;
+
       const char * itsNextName;               //!< Next name set by NVP
-      ReadStream itsReadStream;               //!< Rapidjson write stream
+
+
       std::vector<Iterator> itsIteratorStack; //!< 'Stack' of rapidJSON iterators
       CEREAL_RAPIDJSON_NAMESPACE::Document itsDocument; //!< Rapidjson document
   };
